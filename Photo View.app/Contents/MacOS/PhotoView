@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -e
+
+bundle_dir="$(cd "$(dirname "$0")" && pwd)"
+repo_dir="$(cd "$bundle_dir/../../.." && pwd)"
+
+python_bin="$repo_dir/py3exiv2/bin/python"
+if [ -x "$python_bin" ]; then
+  "$python_bin" "$repo_dir/launch.py" &
+  wait $!
+  exit $?
+fi
+
+if [ -x "/usr/bin/python3" ]; then
+  "/usr/bin/python3" "$repo_dir/launch.py" &
+  wait $!
+  exit $?
+fi
+
+echo "Python not found. Install Python 3 or set up py3exiv2 venv." >&2
+exit 1
