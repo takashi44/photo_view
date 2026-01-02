@@ -33,7 +33,6 @@ Adjust paths to your machine before running.
 - `launch.py`: GUI entry point
 - `etc/`: configuration files
 - `icons/`: UI assets
-- `example_data/`: sample images for manual testing
 
 ## Notes
 This is a GUI app with manual smoke testing; no automated tests are currently configured.
