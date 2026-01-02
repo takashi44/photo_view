@@ -1,0 +1,31 @@
+image_root_dirs:
+  - '/Volumes/Untitled/DCIM'
+  - '/Users/takashi/Pictures/source'
+  - '/Users/takashi/Pictures/export'
+  - '/Users/takashi/Pictures/Lightroom CC Saved Photos'
+
+  
+
+image_extensions:
+  - 'ARW'
+  - 'JPG'
+
+movie_root_dirs:
+  - '/Users/takashi/Movies'
+  - '/Volumes/Untitles/PRIVATE'
+
+movie_extensions:
+  - 'MOV'
+  - 'MP4'
+
+continuous_shoot_threshold_sec: 1
+
+pixmap_cache_size: 1048576
+
+icon_size: 32
+
+folder_icon: 'icons/GenericFolderIcon.icns'
+continuous_shoot_icon: 'icons/continuous-shooting-icon.png'
+
+image_save_folder: '/Users/takashi/Pictures/source'
+movie_save_folder: '/Users/takashi/Movies/source'

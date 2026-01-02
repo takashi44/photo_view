@@ -1,0 +1,21 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.so
+
+# Virtualenvs
+py3exiv2/
+.venv/
+venv/
+
+# Editor/backup artifacts
+*~
+*.tmp
+#*#
+
+# Logs
+*.log
