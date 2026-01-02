@@ -1,6 +1,7 @@
 import yaml
 import os
 import pathlib
+import getpass
 from .logger import logger
 from . import pathutil
 
@@ -14,7 +15,19 @@ def load():
     with open( __path ) as fp:
         logger.info('Loading default config from: %s' % __path )
         data = yaml.safe_load( fp )
+    data = _expand_paths( data )
     return data
+
+def _expand_paths( value ):
+    if isinstance( value, str ):
+        expanded = value.replace('{username}', getpass.getuser())
+        expanded = os.path.expandvars( os.path.expanduser( expanded ) )
+        return expanded
+    if isinstance( value, list ):
+        return [ _expand_paths( item ) for item in value ]
+    if isinstance( value, dict ):
+        return { key: _expand_paths( item ) for key, item in value.items() }
+    return value
     
 def update( **kwargs ):
     global data

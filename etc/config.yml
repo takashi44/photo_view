@@ -1,8 +1,8 @@
 image_root_dirs:
   - '/Volumes/Untitled/DCIM'
-  - '/Users/takashi/Pictures/source'
-  - '/Users/takashi/Pictures/export'
-  - '/Users/takashi/Pictures/Lightroom CC Saved Photos'
+  - '/Users/{username}/Pictures/source'
+  - '/Users/{username}/Pictures/export'
+  - '/Users/{username}/Pictures/Lightroom CC Saved Photos'
 
   
 
@@ -11,7 +11,7 @@ image_extensions:
   - 'JPG'
 
 movie_root_dirs:
-  - '/Users/takashi/Movies'
+  - '/Users/{username}/Movies'
   - '/Volumes/Untitles/PRIVATE'
 
 movie_extensions:
@@ -27,5 +27,5 @@ icon_size: 32
 folder_icon: 'icons/GenericFolderIcon.icns'
 continuous_shoot_icon: 'icons/continuous-shooting-icon.png'
 
-image_save_folder: '/Users/takashi/Pictures/source'
-movie_save_folder: '/Users/takashi/Movies/source'
+image_save_folder: '/Users/{username}/Pictures/source'
+movie_save_folder: '/Users/{username}/Movies/source'
