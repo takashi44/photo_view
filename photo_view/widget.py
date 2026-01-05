@@ -256,19 +256,25 @@ class PV_MainWindow( QtWidgets.QMainWindow ):
         if not os.path.exists( folder ):
             raise RuntimeError('Invalid path: %s' % folder )
 
+        self.model.setImportDestination( folder )
+
         dest_paths = [os.path.join(folder, rel_path) for rel_path in rel_paths]
-        overwrite = False
+        action = 'skip'
         if any([os.path.exists(path) for path in dest_paths] ):
             msg = QtWidgets.QMessageBox()
             msg.setText('Some images already exist')
-            msg.addButton('Replace', QtWidgets.QMessageBox.YesRole)
-            msg.addButton('Skip', QtWidgets.QMessageBox.NoRole)
-            msg.addButton('Cancel', QtWidgets.QMessageBox.RejectRole)
-            ret = msg.exec_()
-            if ret == 2:
+            replace_button = msg.addButton('Replace', QtWidgets.QMessageBox.YesRole)
+            skip_button = msg.addButton('Skip', QtWidgets.QMessageBox.NoRole)
+            cancel_button = msg.addButton('Cancel', QtWidgets.QMessageBox.RejectRole)
+            msg.exec_()
+            clicked = msg.clickedButton()
+            if clicked == cancel_button:
                 return
-            overwrite = ret == 0
-            logger.debug('overwrite: %d' % overwrite )
+            if clicked == replace_button:
+                action = 'replace'
+            else:
+                action = 'skip'
+            logger.debug('existing file action: %s' % action )
 
         src_paths = [node.data for node in nodes]
 
@@ -285,7 +291,7 @@ class PV_MainWindow( QtWidgets.QMainWindow ):
                 os.mkdir( os.path.dirname(dst) )
 
             if os.path.exists( dst ):
-                if overwrite:
+                if action == 'replace':
                     os.remove( dst )
                 else:
                     continue
@@ -293,6 +299,7 @@ class PV_MainWindow( QtWidgets.QMainWindow ):
             shutil.copy2( src, dst )
 
         progress.setValue(len(nodes))
+        self.model.refreshImportStatus()
         
 
     def delete( self, *args ):

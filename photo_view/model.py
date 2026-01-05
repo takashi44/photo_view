@@ -16,6 +16,7 @@ class PV_Model( QtCore.QAbstractItemModel ):
         super( PV_Model, self ).__init__( parent )
         self.root_nodes = self._getRootNodes()
         self._populateNodes()
+        self.import_dest_folder = config.data.get('image_save_folder') or ''
 
         icon_img = pathutil.resolvePackagePath( config.data['folder_icon'] )
         self.folder_icon = QtGui.QIcon( icon_img )
@@ -60,6 +61,8 @@ class PV_Model( QtCore.QAbstractItemModel ):
 
         node = index.internalPointer()
         if role == QtCore.Qt.DisplayRole:
+            if isinstance(node, PV_ImageItem) and self._isImported(node):
+                return '%s (imported)' % node.name
             return node.name
 
         elif role == QtCore.Qt.DecorationRole:
@@ -73,6 +76,14 @@ class PV_Model( QtCore.QAbstractItemModel ):
             elif isinstance(node, PV_ContinuousShootGroupItem ):
                 return self.cs_icon
             return self.folder_icon
+        elif role == QtCore.Qt.ForegroundRole:
+            if isinstance(node, PV_ImageItem) and self._isImported(node):
+                return QtGui.QBrush( QtGui.QColor(120, 120, 120) )
+        elif role == QtCore.Qt.FontRole:
+            if isinstance(node, PV_ImageItem) and self._isImported(node):
+                font = QtGui.QFont()
+                font.setItalic( True )
+                return font
 
         elif role == QtCore.Qt.CheckStateRole:
             if node not in self.root_nodes:
@@ -108,6 +119,12 @@ class PV_Model( QtCore.QAbstractItemModel ):
                 self.dataChanged.emit(index, index)
                 self.checkStateChanged.emit(index)
             return True
+        return False
+
+    def setImportDestination( self, folder ):
+        if folder and folder != self.import_dest_folder:
+            self.import_dest_folder = folder
+            self.refreshImportStatus()
 
     def getChildren( self, index, recursive=True ):
         indexes = []
@@ -117,6 +134,25 @@ class PV_Model( QtCore.QAbstractItemModel ):
             if recursive:
                 indexes.extend( self.getChildren( child, True ) )
         return indexes
+
+    def refreshImportStatus( self ):
+        for i in range(len(self.root_nodes)):
+            root_index = self.index( i, 0, QtCore.QModelIndex() )
+            indexes = self.getChildren( root_index, True )
+            for index in indexes:
+                node = index.internalPointer()
+                if isinstance(node, PV_ImageItem):
+                    self.dataChanged.emit(
+                        index,
+                        index,
+                        [QtCore.Qt.DisplayRole, QtCore.Qt.ForegroundRole, QtCore.Qt.FontRole]
+                    )
+
+    def _isImported( self, node ):
+        if not self.import_dest_folder:
+            return False
+        dest_path = os.path.join( self.import_dest_folder, node.path )
+        return os.path.exists( dest_path )
             
 
     def _getRootNodes( self ):
