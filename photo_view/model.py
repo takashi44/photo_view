@@ -6,6 +6,7 @@ from . import config
 from . import pathutil
 from .logger import logger
 
+import concurrent.futures
 import os
 
 class PV_Model( QtCore.QAbstractItemModel ):
@@ -17,6 +18,7 @@ class PV_Model( QtCore.QAbstractItemModel ):
         self.root_nodes = self._getRootNodes()
         self._populateNodes()
         self.import_dest_folder = config.data.get('image_save_folder') or ''
+        self._imported_cache = {}
 
         icon_img = pathutil.resolvePackagePath( config.data['folder_icon'] )
         self.folder_icon = QtGui.QIcon( icon_img )
@@ -87,12 +89,12 @@ class PV_Model( QtCore.QAbstractItemModel ):
 
         elif role == QtCore.Qt.CheckStateRole:
             if node not in self.root_nodes:
-                if getattr(node, 'checked', 0):
+                if getattr(node, 'checked', False):
                     return QtCore.Qt.Checked
                 return QtCore.Qt.Unchecked
-        
+
     def headerData( self, section, orientation, role=QtCore.Qt.DisplayRole ):
-        if section == 0 and role == QtCore.Qt.Orientation:
+        if section == 0 and orientation == QtCore.Qt.Horizontal and role == QtCore.Qt.DisplayRole:
             return 'Name'
         return None
 
@@ -100,6 +102,7 @@ class PV_Model( QtCore.QAbstractItemModel ):
         self.beginResetModel()
         self.root_nodes = self._getRootNodes()
         self._populateNodes()
+        self._imported_cache = {}
         self.endResetModel()
 
     def flags( self, index ):
@@ -114,8 +117,11 @@ class PV_Model( QtCore.QAbstractItemModel ):
 
         node = index.internalPointer()
         if role == QtCore.Qt.CheckStateRole:
-            if getattr(node, 'checked', 0) != value:
-                node.checked = value
+            # normalize: the view passes ints, shortcuts pass CheckState enums,
+            # and bool(Qt.CheckState.Unchecked) is True in PySide6
+            checked = QtCore.Qt.CheckState(value) == QtCore.Qt.Checked
+            if getattr(node, 'checked', False) != checked:
+                node.checked = checked
                 self.dataChanged.emit(index, index)
                 self.checkStateChanged.emit(index)
             return True
@@ -136,6 +142,7 @@ class PV_Model( QtCore.QAbstractItemModel ):
         return indexes
 
     def refreshImportStatus( self ):
+        self._imported_cache = {}
         for i in range(len(self.root_nodes)):
             root_index = self.index( i, 0, QtCore.QModelIndex() )
             indexes = self.getChildren( root_index, True )
@@ -149,10 +156,15 @@ class PV_Model( QtCore.QAbstractItemModel ):
                     )
 
     def _isImported( self, node ):
+        # cached: this runs per row per repaint, so no stat() every paint
         if not self.import_dest_folder:
             return False
-        dest_path = os.path.join( self.import_dest_folder, node.path )
-        return os.path.exists( dest_path )
+        imported = self._imported_cache.get( node )
+        if imported is None:
+            dest_path = os.path.join( self.import_dest_folder, node.path )
+            imported = os.path.exists( dest_path )
+            self._imported_cache[node] = imported
+        return imported
             
 
     def _getRootNodes( self ):
@@ -167,18 +179,23 @@ class PV_Model( QtCore.QAbstractItemModel ):
     def _populateNodes( self ):
         for root_node in self.root_nodes:
             images = findImages( root_node.data )
-            items = []
-            for image in images:
-                try:
-                    item = getImageItem(image)
-                    items.append(item)
-                except Exception as err:
-                    logger.error(err)
+            with concurrent.futures.ThreadPoolExecutor( max_workers=8 ) as pool:
+                items = list( pool.map( self._loadImageItem, images ) )
+            items = [item for item in items if item]
+            items.sort( key=lambda item: item.datetime )
 
             dates = groupImagesByDay( items )
             css = groupImagesByContinuousShooting( items )
             for item in dates:
                 root_node.addChild(item)
+
+    @staticmethod
+    def _loadImageItem( image ):
+        try:
+            return getImageItem( image )
+        except Exception as err:
+            logger.error('Failed to load %s: %s' % (image, err))
+            return None
             
     def removeRows( self, row, count, parent=QtCore.QModelIndex() ):
         logger.debug('removeRows()...%d, %d' % (row, count))
