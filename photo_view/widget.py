@@ -10,7 +10,9 @@ from .logger import logger
 
 import os
 import shutil
-import filecmp
+import subprocess
+
+from send2trash import send2trash
 
 QtGui.QPixmapCache.setCacheLimit( config.data.get('pixmap_cache_size') or 10240*100 )
 
@@ -104,13 +106,13 @@ class PV_MainWindow( QtWidgets.QMainWindow ):
             return
         node = index.internalPointer()
         if isinstance( node, PV_ImageItem ):
-            os.system( 'open %s' % node.data )
+            subprocess.run( ['open', node.data] )
 
     def previewDoubleClicked( self, *args ):
         index = self.tree_view.currentIndex()
         node = index.internalPointer()
         if isinstance( node, PV_ImageItem ):
-            os.system( 'open %s' % node.data )
+            subprocess.run( ['open', node.data] )
 
 
     def updatePreview( self, *args ):
@@ -143,26 +145,43 @@ class PV_MainWindow( QtWidgets.QMainWindow ):
     def compositeSeqImages( self, node ):
         logger.debug('compositeSeqImages()...%s' % node.name)
         child = node.children[0]
-        pixmap = self.getPixmap( child )
-        out_image = QtGui.QImage( pixmap.size(), QtGui.QImage.Format_ARGB32_Premultiplied )
+        pixmap = self.getPixmap( child )  # already oriented by getPixmap
+        width = pixmap.width()
+        height = pixmap.height()
 
-        source_size = pixmap.size()
-        dest_size =  source_size + QtCore.QSize( 100, 100 )
-        out_image = QtGui.QImage( dest_size, QtGui.QImage.Format_ARGB32_Premultiplied )
+        num_cards = 2
+        offset = max( 8, int(width * 0.03) )
+        margin = offset * num_cards
+        radius = offset * 0.6
 
-        brush = QtGui.QBrush( QtCore.Qt.gray, QtCore.Qt.SolidPattern )
+        out_image = QtGui.QImage( width + margin, height + margin,
+                                  QtGui.QImage.Format_ARGB32_Premultiplied )
+        out_image.fill( QtCore.Qt.transparent )
+
         painter = QtGui.QPainter()
         painter.begin( out_image )
-        painter.setCompositionMode( QtGui.QPainter.CompositionMode_Source )
+        painter.setRenderHint( QtGui.QPainter.Antialiasing )
 
-        painter.setBrush( brush )
-        painter.drawRoundedRect( 90, 90, source_size.width(), source_size.height(), 5.0, 5.0 )
-        painter.drawRoundedRect( 60, 60, source_size.width(), source_size.height(), 5.0, 5.0 )
-        painter.drawRoundedRect( 30, 30, source_size.width(), source_size.height(), 5.0, 5.0 )
+        shadow_shift = max( 2, offset // 4 )
+        for i in range( num_cards, 0, -1 ):
+            off = offset * i
+            # soft shadow behind each card
+            painter.setPen( QtCore.Qt.NoPen )
+            painter.setBrush( QtGui.QColor(0, 0, 0, 50) )
+            painter.drawRoundedRect( QtCore.QRectF( off + shadow_shift, off + shadow_shift,
+                                                    width, height ), radius, radius )
+            # the card itself
+            painter.setPen( QtGui.QPen( QtGui.QColor(190, 190, 190), 1 ) )
+            painter.setBrush( QtGui.QColor(248, 248, 248) )
+            painter.drawRoundedRect( QtCore.QRectF( off, off, width, height ), radius, radius )
 
+        painter.setPen( QtCore.Qt.NoPen )
+        painter.setBrush( QtGui.QColor(0, 0, 0, 50) )
+        painter.drawRoundedRect( QtCore.QRectF( shadow_shift, shadow_shift, width, height ),
+                                 radius, radius )
         painter.drawPixmap( 0, 0, pixmap )
         painter.end()
-        
+
         return QtGui.QPixmap.fromImage( out_image, QtCore.Qt.AutoColor )
 
     def showPreviewImage( self, node, fit=False, scale=100 ):
@@ -266,7 +285,7 @@ class PV_MainWindow( QtWidgets.QMainWindow ):
             replace_button = msg.addButton('Replace', QtWidgets.QMessageBox.YesRole)
             skip_button = msg.addButton('Skip', QtWidgets.QMessageBox.NoRole)
             cancel_button = msg.addButton('Cancel', QtWidgets.QMessageBox.RejectRole)
-            msg.exec_()
+            msg.exec()
             clicked = msg.clickedButton()
             if clicked == cancel_button:
                 return
@@ -287,8 +306,7 @@ class PV_MainWindow( QtWidgets.QMainWindow ):
             if progress.wasCanceled():
                 break
             
-            if not os.path.exists(os.path.dirname(dst)):
-                os.mkdir( os.path.dirname(dst) )
+            os.makedirs( os.path.dirname(dst), exist_ok=True )
 
             if os.path.exists( dst ):
                 if action == 'replace':
@@ -312,7 +330,7 @@ class PV_MainWindow( QtWidgets.QMainWindow ):
         if not nodes:
             return
         
-        ret = QtWidgets.QMessageBox.warning(self, 'Delete' , 'Deleting %d images' % len(nodes),
+        ret = QtWidgets.QMessageBox.warning(self, 'Delete' , 'Moving %d images to Trash' % len(nodes),
                                             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.Cancel )
         if ret != QtWidgets.QMessageBox.Yes:
             return
@@ -333,11 +351,11 @@ class PV_MainWindow( QtWidgets.QMainWindow ):
             if not parent.internalPointer().children:
                 parents.add( parent )
 
-            # actually deleting image file
+            # move the image file to Trash
             node = index.internalPointer()
             if isinstance( node, PV_ImageItem ):
-                logger.debug('Deleting %s' % node.data )
-                os.remove( node.data )
+                logger.debug('Trashing %s' % node.data )
+                send2trash( node.data )
 
         # clean up groups with no children
         logger.debug('Parents with no child: %d' % len(parents))
@@ -362,9 +380,11 @@ class PV_MainWindow( QtWidgets.QMainWindow ):
             if not index.isValid():
                 return
             checked = self.tree_view.model().data( index, QtCore.Qt.CheckStateRole )
-            new_value = QtCore.Qt.Checked
-            if checked:
+            # compare explicitly: bool(Qt.CheckState.Unchecked) is True in PySide6
+            if checked == QtCore.Qt.Checked:
                 new_value = QtCore.Qt.Unchecked
+            else:
+                new_value = QtCore.Qt.Checked
 
             self.tree_view.model().setData( index, new_value, QtCore.Qt.CheckStateRole )
 
