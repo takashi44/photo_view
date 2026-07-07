@@ -10,9 +10,11 @@ from .logger import logger
 
 import os
 import shutil
-import subprocess
 
 from send2trash import send2trash
+
+def openWithDefaultApp( path ):
+    QtGui.QDesktopServices.openUrl( QtCore.QUrl.fromLocalFile( path ) )
 
 QtGui.QPixmapCache.setCacheLimit( config.data.get('pixmap_cache_size') or 10240*100 )
 
@@ -106,13 +108,13 @@ class PV_MainWindow( QtWidgets.QMainWindow ):
             return
         node = index.internalPointer()
         if isinstance( node, PV_ImageItem ):
-            subprocess.run( ['open', node.data] )
+            openWithDefaultApp( node.data )
 
     def previewDoubleClicked( self, *args ):
         index = self.tree_view.currentIndex()
         node = index.internalPointer()
         if isinstance( node, PV_ImageItem ):
-            subprocess.run( ['open', node.data] )
+            openWithDefaultApp( node.data )
 
 
     def updatePreview( self, *args ):

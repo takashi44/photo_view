@@ -45,6 +45,18 @@ upgrade or on a new machine, just reinstall Python and repeat the steps above.
 5. On first launch, macOS may ask for permission to access Pictures/Documents/
    removable volumes — allow them, or folder scans will silently come up empty.
 
+### Windows
+The app and all dependencies are cross-platform (all install as prebuilt
+wheels). Setup differs only in paths:
+```bat
+python -m venv .venv
+.venv\Scripts\pip install -r requirements.txt
+.venv\Scripts\python launch.py
+```
+Edit `etc/config.yml` to use Windows paths, e.g. `E:/DCIM` for an SD card and
+`C:/Users/{username}/Pictures/source` (forward slashes work; `{username}` is
+expanded automatically).
+
 ## Configuration
 Default settings live in `etc/config.yml`:
 - `image_root_dirs`: folders scanned for images

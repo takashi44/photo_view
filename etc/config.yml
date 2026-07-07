@@ -24,7 +24,7 @@ pixmap_cache_size: 1048576
 
 icon_size: 32
 
-folder_icon: 'icons/GenericFolderIcon.icns'
+folder_icon: 'icons/GenericFolderIcon.png'
 continuous_shoot_icon: 'icons/continuous-shooting-icon.png'
 
 image_save_folder: '/Users/{username}/Pictures/source'
