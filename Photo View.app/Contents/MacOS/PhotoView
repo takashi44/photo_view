@@ -4,18 +4,13 @@ set -e
 bundle_dir="$(cd "$(dirname "$0")" && pwd)"
 repo_dir="$(cd "$bundle_dir/../../.." && pwd)"
 
-python_bin="$repo_dir/py3exiv2/bin/python"
-if [ -x "$python_bin" ]; then
-  "$python_bin" "$repo_dir/launch.py" &
-  wait $!
-  exit $?
-fi
+for python_bin in "$repo_dir/.venv/bin/python" "$repo_dir/py3exiv2/bin/python" "/usr/bin/python3"; do
+  if [ -x "$python_bin" ]; then
+    "$python_bin" "$repo_dir/launch.py" &
+    wait $!
+    exit $?
+  fi
+done
 
-if [ -x "/usr/bin/python3" ]; then
-  "/usr/bin/python3" "$repo_dir/launch.py" &
-  wait $!
-  exit $?
-fi
-
-echo "Python not found. Install Python 3 or set up py3exiv2 venv." >&2
+echo "Python not found. Run: python3 -m venv .venv && .venv/bin/pip install -r requirements.txt" >&2
 exit 1

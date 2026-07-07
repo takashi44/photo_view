@@ -15,6 +15,6 @@ if __name__ == "__main__":
     QtGui.QGuiApplication.setApplicationDisplayName("Photo View")
     window = photo_view.widget.PV_MainWindow()
     window.show()
-    sys.exit( app.exec_() )
+    sys.exit( app.exec() )
     
     

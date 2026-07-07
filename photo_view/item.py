@@ -1,12 +1,13 @@
-import pyexiv2
+import bisect
 import os
 import re
 import datetime
 from . import config
+from . import metadata
 from . import pathutil
 
 class PV_BaseItem( object ):
-    
+
     def __init__( self, data ):
         self._data = data
         self._children = []
@@ -20,12 +21,13 @@ class PV_BaseItem( object ):
 
     def addChild( self, item ):
         self._checkItem( item )
-        if item not in self._children:
-            self._children.append( item )
+        if item in self._children:
+            item._parent = self
+            return
         if item.parent and item.parent != self:
             item.parent.removeChild( item )
         item._parent = self
-        self._children.sort( key=lambda a: a.datetime )
+        bisect.insort( self._children, item, key=lambda a: a.datetime )
 
     def _checkItem( self, item ):
         pass
@@ -77,7 +79,7 @@ class PV_BaseItem( object ):
 
 class PV_RootItem( PV_BaseItem ):
     IMG = pathutil.resolvePackagePath( config.data['folder_icon'] )
-    
+
     def __init__( self, path ):
         super( PV_RootItem, self ).__init__( path )
         if not os.path.exists( path ):
@@ -94,7 +96,7 @@ class PV_RootItem( PV_BaseItem ):
 
 class PV_DateGroupItem( PV_BaseItem ):
     IMG = pathutil.resolvePackagePath( config.data['continuous_shoot_icon'] )
-    
+
     def __init__( self, data ):
         super( PV_DateGroupItem, self ).__init__( data )
         if not isinstance(self._data, datetime.datetime):
@@ -128,7 +130,7 @@ class PV_ContinuousShootGroupItem( PV_BaseItem ):
         if len(self._children):
             return '%s...(%d)' % (self._children[0].name, len(self.children))
         return ''
-    
+
     @property
     def datetime( self ):
         return self._data
@@ -143,17 +145,22 @@ class PV_ContinuousShootGroupItem( PV_BaseItem ):
 class PV_ImageItem( PV_BaseItem ):
     def __init__( self, path ):
         super( PV_ImageItem, self ).__init__( path )
-        self.md = pyexiv2.ImageMetadata( path )
-        self.md.read()
+        md = metadata.ImageMetadata( path )
+        # cache scalar values; the metadata object is not kept around
+        if md.datetime:
+            self._datetime = md.datetime
+        else:
+            self._datetime = datetime.datetime.fromtimestamp( os.path.getmtime(path) )
+        self._orientation = md.orientation
+        self._sequence_number = md.sequence_number
+        self._pixel_size = md.pixel_size
 
     def addChild( self, item ):
         raise RuntimeError('Unable to add child on ImageItem' )
 
     @property
     def datetime( self ):
-        if 'Exif.Photo.DateTimeOriginal' in self.md:
-            return self.md.get('Exif.Photo.DateTimeOriginal').value
-        return self.md.get('Exif.Image.DateTime').value
+        return self._datetime
 
     @property
     def name( self ):
@@ -161,11 +168,15 @@ class PV_ImageItem( PV_BaseItem ):
 
     @property
     def thumbnail( self ):
-        return self.md.previews[0].data
+        return metadata.thumbnailBytes( self._data )
 
     @property
     def orientation( self ):
-        return self.md.get('Exif.Image.Orientation').value
+        return self._orientation
+
+    @property
+    def sequence_number( self ):
+        return self._sequence_number
 
     @property
     def path( self ):
@@ -180,35 +191,22 @@ class PV_JPG( PV_ImageItem ):
 
     @property
     def preview( self ):
-        return self.md.buffer
+        with open( self._data, 'rb' ) as fp:
+            return fp.read()
 
     @property
     def preview_size( self ):
-        return self.md.dimensions
-
-    @property
-    def sequence_number( self ):
-        tag = self.md.get('Exif.Sony1.SequenceNumber')
-        if tag:
-            return tag.value
-        return -1
+        return self._pixel_size
 
 class PV_ARW( PV_ImageItem ):
 
     @property
     def preview( self ):
-        return self.md.previews[1].data
+        return metadata.largestPreviewBytes( self._data )
 
     @property
     def preview_size( self ):
-        return self.md.previews[1].dimensions
-
-    @property
-    def sequence_number( self ):
-        tag = self.md.get('Exif.Sony2.SequenceNumber')
-        if tag:
-            return tag.value
-        return -1
+        return metadata.largestPreviewSize( self._data )
 
 class PV_MovieItem( PV_BaseItem ):
     def __init__( self, path ):
@@ -227,13 +225,15 @@ def findImages( root_dir=None ):
     else:
         root_dirs = config.data['image_root_dirs']
 
-    extensions = config.data['image_extensions']
-    extensions_pattern = '(' + '|'.join(extensions) + ')$'
+    extensions = tuple( '.' + ext.lower().lstrip('.') for ext in config.data['image_extensions'] )
     images = []
     for root_dir in root_dirs:
         for root, dirs, files in os.walk(root_dir):
             for file in files:
-                if re.search( extensions_pattern, file ):
+                # skip hidden files, e.g. macOS '._*' AppleDouble files on SD cards
+                if file.startswith('.'):
+                    continue
+                if file.lower().endswith( extensions ):
                     path = os.path.join(root, file)
                     images.append( path )
     return sorted(images)
@@ -257,7 +257,7 @@ def groupImagesByDay( image_items ):
 def isContinuousShooting( a, b ):
     if not isinstance( a, PV_ImageItem ) or not isinstance( b, PV_ImageItem ):
         return False
-    
+
     # Sequencial image (based on naming)
     #   check sequence_number
     m1 = re.search('[0-9]+', a.name)
@@ -269,30 +269,28 @@ def isContinuousShooting( a, b ):
     #  - check threshold sec
     #  - sequence_number is not the same (not best, but more for sanity check)
     threshold = int(config.data.get('continuous_shoot_threshold_sec')) or 1
-    diff = (b.datetime - a.datetime).seconds
+    diff = abs( (b.datetime - a.datetime).total_seconds() )
     if diff > threshold:
         return False
     return a.sequence_number != b.sequence_number
-            
-    
+
+
 def groupImagesByContinuousShooting( images ):
-#    threshold = int(config.data.get('continuous_shoot_threshold_sec')) or 1
     groups = []
 
     prev_image = None
     curr_group = None
-    
+
     for curr_image in images:
         if not prev_image:
             prev_image = curr_image
             continue
 
-        #if abs(prev_image.datetime - curr_image.datetime).seconds < threshold:
         if isContinuousShooting( prev_image, curr_image ):
             if not curr_group:
                 curr_group = PV_ContinuousShootGroupItem( prev_image.datetime )
                 groups.append( curr_group )
-                
+
             if prev_image.parent:
                 prev_image.parent.addChild( curr_group )
             if curr_image.parent:
@@ -303,15 +301,7 @@ def groupImagesByContinuousShooting( images ):
         elif curr_group:
             curr_group = None
 
-            
+
         prev_image = curr_image
-        
+
     return groups
-    
-def test_populateItems():
-    images = findImages()
-    image_items = [ImageItem(image) for image in images]
-    date_groups = groupImagesByDay( image_items )
-    cs_groups = groupImagesByContinuousShooting( image_items )
-    return image_items, cs_groups, date_groups
-    

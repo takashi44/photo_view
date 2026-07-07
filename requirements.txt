@@ -1,0 +1,4 @@
+PySide6
+PyYAML
+exiv2
+Send2Trash
